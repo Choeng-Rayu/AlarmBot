@@ -10,7 +10,7 @@ const app = express();
 app.use(bodyParser.json());
 
 // Connect to MongoDB with error handling
-mongoose.connect(process.env.MONGODB_URI, {
+mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://ChoengRayu:C9r6nhxOVLCUkkGd@cluster0.2ott03t.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0', {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 }).then(() => {
@@ -55,7 +55,7 @@ const PORT = process.env.PORT;
 app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
   
-  const webhookUrl = `${process.env.WEBHOOK_URL}/webhook`;
+  const webhookUrl = `${process.env.WEBHOOK_URL || 'https://alarmbot-1h93.onrender.com'}/webhook`;
   try {
     await bot.setWebHook(webhookUrl);
     console.log('Webhook set successfully to', webhookUrl);
