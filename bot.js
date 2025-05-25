@@ -161,97 +161,206 @@ bot.onText(/\/start/, async (msg) => {
   }
 });
 
-// Handle /addalarm command
+// // Handle /addalarm command
+// bot.onText(/\/addalarm (\d{2}:\d{2})/, async (msg, match) => {
+//   const chatId = msg.chat.id;
+//   const time = match[1];
+//   try {
+//     const user = await User.findOne({ chatId });
+//     if (!user) {
+//       await bot.sendMessage(chatId, "Please use /start first.");
+//       return;
+//     }
+
+//     if (user.alarms.length >= 10) {
+//       await bot.sendMessage(chatId, "You already have 10 alarms set!");
+//       return;
+//     }
+
+//     user.alarms.push({ time, pending: false });
+//     await user.save();
+//     await scheduleUserAlarms(chatId);
+
+//     const remaining = 10 - user.alarms.length;
+//     await bot.sendMessage(chatId,
+//       `Alarm set for ${time}. ${remaining} more alarms needed to reach 10.`
+//     );
+//   } catch (err) {
+//     console.error('Error handling /addalarm:', err);
+//   }
+// });
+
+// // Handle callback queries
+// bot.on('callback_query', async (callbackQuery) => {
+//   const chatId = callbackQuery.message.chat.id;
+//   const data = callbackQuery.data;
+//   try {
+//     const user = await User.findOne({ chatId });
+//     if (!user) return;
+
+//     if (data.startsWith('ack_')) {
+//       const alarmIndex = parseInt(data.split('_')[1]);
+//       if (alarmIndex < user.alarms.length) {
+//         user.alarms[alarmIndex].pending = false;
+//         user.streak += 1;
+//         user.lastActive = new Date();
+//         await user.save();
+
+//         await bot.answerCallbackQuery(callbackQuery.id, {
+//           text: `Great job! ${user.streak} day streak!`
+//         });
+//         await bot.editMessageReplyMarkup(
+//           { inline_keyboard: [] },
+//           { chat_id: chatId, message_id: callbackQuery.message.message_id }
+//         );
+//       }
+//     } else if (data.startsWith('skip_')) {
+//       const alarmIndex = parseInt(data.split('_')[1]);
+//       if (alarmIndex < user.alarms.length) {
+//         user.alarms[alarmIndex].pending = false;
+//         await user.save();
+
+//         await bot.answerCallbackQuery(callbackQuery.id, {
+//           text: "Okay, skipped for today."
+//         });
+//         await bot.editMessageReplyMarkup(
+//           { inline_keyboard: [] },
+//           { chat_id: chatId, message_id: callbackQuery.message.message_id }
+//         );
+//       }
+//     }
+//   } catch (err) {
+//     console.error('Error handling callback query:', err);
+//   }
+// });
+
+// // Handle "List Alarms" command
+// bot.onText(/List Alarms/, async (msg) => {
+//   const chatId = msg.chat.id;
+//   try {
+//     const user = await User.findOne({ chatId });
+//     if (!user || user.alarms.length === 0) {
+//       await bot.sendMessage(chatId, "You have no alarms set.");
+//       return;
+//     }
+
+//     const alarmList = user.alarms.map((alarm, index) =>
+//       `${index + 1}. ${alarm.time}`
+//     ).join('\n');
+//     await bot.sendMessage(chatId, `Your alarms:\n${alarmList}`);
+//   } catch (err) {
+//     console.error('Error listing alarms:', err);
+//   }
+// });
+
+
+// ... (keep the initial setup code the same until bot command handlers)
+
+// Improved /addalarm handler with confirmation
 bot.onText(/\/addalarm (\d{2}:\d{2})/, async (msg, match) => {
   const chatId = msg.chat.id;
   const time = match[1];
+  
+  // Validate time format
+  const [hours, minutes] = time.split(':').map(Number);
+  if (hours > 23 || minutes > 59) {
+    return await bot.sendMessage(chatId, "⛔ Invalid time format! Please use HH:MM (24-hour format)");
+  }
+
   try {
     const user = await User.findOne({ chatId });
-    if (!user) {
-      await bot.sendMessage(chatId, "Please use /start first.");
-      return;
-    }
-
+    if (!user) return await bot.sendMessage(chatId, "⚠️ Please use /start first");
+    
     if (user.alarms.length >= 10) {
-      await bot.sendMessage(chatId, "You already have 10 alarms set!");
-      return;
+      return await bot.sendMessage(chatId, 
+        "⛔ Maximum limit reached! You can only set 10 alarms\n" +
+        "Use 'List Alarms' to see your current alarms"
+      );
     }
 
-    user.alarms.push({ time, pending: false });
+    // Check for duplicate alarm time
+    if (user.alarms.some(alarm => alarm.time === time)) {
+      return await bot.sendMessage(chatId, `⏰ Alarm at ${time} already exists!`);
+    }
+
+    user.alarms.push({ time });
     await user.save();
     await scheduleUserAlarms(chatId);
 
-    const remaining = 10 - user.alarms.length;
+    // Enhanced confirmation message
     await bot.sendMessage(chatId,
-      `Alarm set for ${time}. ${remaining} more alarms needed to reach 10.`
+      `✅ Successfully added alarm at ${time}\n\n` +
+      `📊 Current status:\n` +
+      `- Total alarms: ${user.alarms.length}/10\n` +
+      `- Next alarm: ${getNextAlarmTime(user.alarms)}`
     );
+
   } catch (err) {
     console.error('Error handling /addalarm:', err);
+    await bot.sendMessage(chatId, "⚠️ Failed to add alarm. Please try again");
   }
 });
 
-// Handle callback queries
-bot.on('callback_query', async (callbackQuery) => {
-  const chatId = callbackQuery.message.chat.id;
-  const data = callbackQuery.data;
-  try {
-    const user = await User.findOne({ chatId });
-    if (!user) return;
+// New helper function to get next alarm time
+function getNextAlarmTime(alarms) {
+  if (alarms.length === 0) return "No upcoming alarms";
+  
+  const now = new Date();
+  const currentTime = now.getHours() * 60 + now.getMinutes();
+  
+  const nextAlarm = alarms
+    .map(a => {
+      const [h, m] = a.time.split(':').map(Number);
+      return { time: a.time, minutes: h * 60 + m };
+    })
+    .sort((a, b) => a.minutes - b.minutes)
+    .find(a => a.minutes > currentTime);
 
-    if (data.startsWith('ack_')) {
-      const alarmIndex = parseInt(data.split('_')[1]);
-      if (alarmIndex < user.alarms.length) {
-        user.alarms[alarmIndex].pending = false;
-        user.streak += 1;
-        user.lastActive = new Date();
-        await user.save();
+  return nextAlarm ? nextAlarm.time : `Tomorrow at ${alarms[0].time}`;
+}
 
-        await bot.answerCallbackQuery(callbackQuery.id, {
-          text: `Great job! ${user.streak} day streak!`
-        });
-        await bot.editMessageReplyMarkup(
-          { inline_keyboard: [] },
-          { chat_id: chatId, message_id: callbackQuery.message.message_id }
-        );
-      }
-    } else if (data.startsWith('skip_')) {
-      const alarmIndex = parseInt(data.split('_')[1]);
-      if (alarmIndex < user.alarms.length) {
-        user.alarms[alarmIndex].pending = false;
-        await user.save();
-
-        await bot.answerCallbackQuery(callbackQuery.id, {
-          text: "Okay, skipped for today."
-        });
-        await bot.editMessageReplyMarkup(
-          { inline_keyboard: [] },
-          { chat_id: chatId, message_id: callbackQuery.message.message_id }
-        );
-      }
-    }
-  } catch (err) {
-    console.error('Error handling callback query:', err);
-  }
-});
-
-// Handle "List Alarms" command
+// Improved List Alarms handler
 bot.onText(/List Alarms/, async (msg) => {
   const chatId = msg.chat.id;
   try {
     const user = await User.findOne({ chatId });
-    if (!user || user.alarms.length === 0) {
-      await bot.sendMessage(chatId, "You have no alarms set.");
-      return;
+    
+    if (!user) {
+      return await bot.sendMessage(chatId, 
+        "⚠️ No alarms found!\n" +
+        "Use /start to initialize your profile\n" +
+        "Then use /addalarm HH:MM to set alarms"
+      );
     }
 
-    const alarmList = user.alarms.map((alarm, index) =>
-      `${index + 1}. ${alarm.time}`
-    ).join('\n');
-    await bot.sendMessage(chatId, `Your alarms:\n${alarmList}`);
+    if (user.alarms.length === 0) {
+      return await bot.sendMessage(chatId,
+        "⏰ You don't have any alarms set!\n\n" +
+        "Use /addalarm HH:MM to create new alarms\n" +
+        "Example: /addalarm 08:30"
+      );
+    }
+
+    // Format alarm list with numbers and emojis
+    const alarmList = user.alarms
+      .map((alarm, index) => `${index + 1}. ⏰ ${alarm.time}`)
+      .join('\n');
+
+    // Add header and status information
+    const message = 
+      `📋 Your Alarms (${user.alarms.length}/10):\n\n${alarmList}\n\n` +
+      `Next alarm: ${getNextAlarmTime(user.alarms)}\n` +
+      `Current streak: ${user.streak} days`;
+
+    await bot.sendMessage(chatId, message);
+
   } catch (err) {
     console.error('Error listing alarms:', err);
+    await bot.sendMessage(chatId, "⚠️ Failed to retrieve alarms. Please try again");
   }
 });
+
+// ... (rest of the code remains the same)
 
 // Handle "My Stats" command
 bot.onText(/My Stats/, async (msg) => {
