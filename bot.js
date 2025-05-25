@@ -316,7 +316,7 @@ const app = express();
 app.use(bodyParser.json());
 
 // Database connection
-mongoose.connect(process.env.MONGODB_URI, {
+mongoose.connect('mongodb+srv://ChoengRayu:C9r6nhxOVLCUkkGd@cluster0.2ott03t.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0', {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
