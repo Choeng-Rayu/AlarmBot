@@ -357,16 +357,37 @@ app.post('/webhook', (req, res) => {
 const activeJobs = {};
 
 // Server initialization
-const PORT = process.env.PORT || 3000;
+// const PORT = process.env.PORT || 3000;
+// app.listen(PORT, async () => {
+//   console.log(`Server running on port ${PORT}`);
+//   try {
+//     const webhookUrl = `${process.env.WEBHOOK_URL}/webhook`;
+//     await bot.setWebHook(webhookUrl);
+//     console.log('Webhook set successfully to', webhookUrl);
+//   } catch (err) {
+//     console.error('Error setting webhook:', err);
+//   }
+// });
+
 app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
-  try {
-    const webhookUrl = `${process.env.WEBHOOK_URL}/webhook`;
-    await bot.setWebHook(webhookUrl);
-    console.log('Webhook set successfully to', webhookUrl);
-  } catch (err) {
-    console.error('Error setting webhook:', err);
-  }
+  
+  // Add delay for Render initialization
+  setTimeout(async () => {
+    try {
+      const webhookUrl = `${process.env.WEBHOOK_URL}/webhook`;
+      console.log('Attempting to set webhook at:', webhookUrl);
+      
+      await bot.setWebHook(webhookUrl);
+      console.log('Webhook set successfully');
+      
+      // Verify webhook was set
+      const webhookInfo = await bot.getWebHookInfo();
+      console.log('Webhook Info:', webhookInfo);
+    } catch (err) {
+      console.error('Webhook setup error:', err.message);
+    }
+  }, 10000); // 10-second delay for Render to fully initialize
 });
 
 // Alarm scheduling functions
