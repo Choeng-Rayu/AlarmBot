@@ -368,7 +368,7 @@ const activeJobs = {};
 //     console.error('Error setting webhook:', err);
 //   }
 // });
-
+const PORT = process.env.PORT || 3002;
 app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
   
