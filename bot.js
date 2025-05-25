@@ -559,7 +559,7 @@ async function setWebhook() {
 }
 
 // Start server
-const PORT = process.env.PORT || 3000; // Use Render's PORT or fallback to 3000
+const PORT = 3007; // Use Render's PORT or fallback to 3000
 app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
   await setWebhook();
