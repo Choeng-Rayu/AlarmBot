@@ -17,14 +17,14 @@ mongoose.connect(process.env.MONGODB_URI, {
   console.log('MongoDB connected successfully');
 }).catch(err => {
   console.error('MongoDB connection error:', err);
-  process.exit(1); // Exit if database connection fails
+  process.exit(1);
 });
 
 // User schema
 const userSchema = new mongoose.Schema({
   chatId: { type: Number, required: true, unique: true },
   alarms: [{
-    time: String, // HH:MM format
+    time: String,
     jobName: String,
     pending: { type: Boolean, default: false }
   }],
@@ -33,13 +33,13 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// Initialize bot
-const token = process.env.TELEGRAM_BOT_TOKEN  || '7592873435:AAF6a9CeL_R4gLmRBz_-qd6gmeb2KY07UtU';
+// Initialize bot with webhook mode
+const token = process.env.TELEGRAM_BOT_TOKEN;
 if (!token) {
   console.error('TELEGRAM_BOT_TOKEN is not set');
   process.exit(1);
 }
-const bot = new TelegramBot(token);
+const bot = new TelegramBot(token, { polling: false });
 
 // Webhook endpoint
 app.post('/webhook', (req, res) => {
@@ -51,12 +51,11 @@ app.post('/webhook', (req, res) => {
 const activeJobs = {};
 
 // Start server and set webhook
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT;
 app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
   
-  // Replace with your actual Railway URL
-  const webhookUrl = process.env.WEBHOOK_URL;
+  const webhookUrl = `${process.env.WEBHOOK_URL}/webhook`;
   try {
     await bot.setWebHook(webhookUrl);
     console.log('Webhook set successfully to', webhookUrl);
