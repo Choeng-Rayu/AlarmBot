@@ -1,22 +1,18 @@
-// bot.js
 require('dotenv').config();
+const { Telegraf, Markup } = require('telegraf');
 const express = require('express');
-const bodyParser = require('body-parser');
-const TelegramBot = require('node-telegram-bot-api');
 const schedule = require('node-schedule');
 const mongoose = require('mongoose');
 
 const app = express();
-
-// Middleware
-app.use(bodyParser.json());
+const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 
 // MongoDB Connection
 mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
 }).then(() => console.log('MongoDB connected'))
-  .catch(err => console.error('MongoDB connection error:', err));
+  .catch(console.error);
 
 // User Schema
 const userSchema = new mongoose.Schema({
@@ -32,58 +28,50 @@ const userSchema = new mongoose.Schema({
 });
 
 const User = mongoose.model('User', userSchema);
-
-// Initialize Telegram Bot
-const token = process.env.TELEGRAM_BOT_TOKEN;
-const bot = new TelegramBot(token, { polling: false });
-
-// Set Webhook
-const webhookUrl = `${process.env.WEBHOOK_URL}/webhook`;
-bot.setWebHook(webhookUrl)
-  .then(() => console.log(`Webhook set to ${webhookUrl}`))
-  .catch(console.error);
-
-// Store active jobs
 const activeJobs = {};
 
-// Bot Functionality
+// Middleware
+bot.use(async (ctx, next) => {
+  ctx.user = await User.findOneAndUpdate(
+    { chatId: ctx.chat.id },
+    { $set: { lastActive: new Date() } },
+    { upsert: true, new: true }
+  );
+  return next();
+});
+
+// Scheduled jobs handling
 async function scheduleUserJobs(chatId) {
   const user = await User.findOne({ chatId });
   if (!user) return;
 
   // Cancel existing jobs
-  if (user.morningJobName && activeJobs[user.morningJobName]) {
-    activeJobs[user.morningJobName].cancel();
-    delete activeJobs[user.morningJobName];
-  }
-  if (user.eveningJobName && activeJobs[user.eveningJobName]) {
-    activeJobs[user.eveningJobName].cancel();
-    delete activeJobs[user.eveningJobName];
-  }
+  [user.morningJobName, user.eveningJobName].forEach(jobName => {
+    if (jobName && activeJobs[jobName]) {
+      activeJobs[jobName].cancel();
+      delete activeJobs[jobName];
+    }
+  });
 
   // Schedule morning message
-  const [morningHour, morningMinute] = user.morningTime.split(':').map(Number);
-  const morningJobName = `morning_${chatId}`;
-  activeJobs[morningJobName] = schedule.scheduleJob(
-    { hour: morningHour, minute: morningMinute, tz: 'Asia/Phnom_Penh' },
-    async () => {
-      await sendScheduledMessage(chatId, 'morning');
-    }
+  const [mHour, mMin] = user.morningTime.split(':').map(Number);
+  const morningJob = schedule.scheduleJob(
+    { hour: mHour, minute: mMin, tz: 'Asia/Phnom_Penh' },
+    () => sendScheduledMessage(chatId, 'morning')
   );
-
+  
   // Schedule evening message
-  const [eveningHour, eveningMinute] = user.eveningTime.split(':').map(Number);
-  const eveningJobName = `evening_${chatId}`;
-  activeJobs[eveningJobName] = schedule.scheduleJob(
-    { hour: eveningHour, minute: eveningMinute, tz: 'Asia/Phnom_Penh' },
-    async () => {
-      await sendScheduledMessage(chatId, 'evening');
-    }
+  const [eHour, eMin] = user.eveningTime.split(':').map(Number);
+  const eveningJob = schedule.scheduleJob(
+    { hour: eHour, minute: eMin, tz: 'Asia/Phnom_Penh' },
+    () => sendScheduledMessage(chatId, 'evening')
   );
 
   // Update user with job names
-  user.morningJobName = morningJobName;
-  user.eveningJobName = eveningJobName;
+  user.morningJobName = `morning_${chatId}`;
+  user.eveningJobName = `evening_${chatId}`;
+  activeJobs[user.morningJobName] = morningJob;
+  activeJobs[user.eveningJobName] = eveningJob;
   await user.save();
 }
 
@@ -92,197 +80,120 @@ async function sendScheduledMessage(chatId, timeOfDay) {
   if (!user) return;
 
   const message = timeOfDay === 'morning' 
-    ? `🌞 Good morning! It's time for your morning routine! Reply "OK" when done.` 
-    : `🌙 Good evening! Time for your evening reflection. Reply "OK" when done.`;
+    ? '🌞 Good morning! Time for your morning routine!'
+    : '🌙 Good evening! Time for your reflection.';
 
-  const options = {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: "I did it!", callback_data: `ack_${timeOfDay}` }],
-        [{ text: "Skip today", callback_data: `skip_${timeOfDay}` }]
-      ]
-    }
-  };
+  const keyboard = Markup.inlineKeyboard([
+    Markup.button.callback('I did it!', `ack_${timeOfDay}`),
+    Markup.button.callback('Skip today', `skip_${timeOfDay}`)
+  ]);
 
-  await bot.sendMessage(chatId, message, options);
+  await bot.telegram.sendMessage(chatId, message, keyboard);
   
-  // Mark as pending
-  if (timeOfDay === 'morning') {
-    user.pendingMorning = true;
-  } else {
-    user.pendingEvening = true;
-  }
+  // Update pending status
+  user[`pending${timeOfDay[0].toUpperCase() + timeOfDay.slice(1)}`] = true;
   await user.save();
 
-  // Set timeout to check response
+  // Set timeout for missed activity
   setTimeout(async () => {
     const updatedUser = await User.findOne({ chatId });
-    if (!updatedUser) return;
-
-    if ((timeOfDay === 'morning' && updatedUser.pendingMorning) || 
-        (timeOfDay === 'evening' && updatedUser.pendingEvening)) {
-      await bot.sendMessage(chatId, `⚠️ You missed your ${timeOfDay} activity. Your streak has been reset.`);
+    if (updatedUser?.[`pending${timeOfDay}`]) {
+      await bot.telegram.sendMessage(
+        chatId,
+        `⚠️ Missed ${timeOfDay} activity! Streak reset.`
+      );
       updatedUser.streak = 0;
-      if (timeOfDay === 'morning') {
-        updatedUser.pendingMorning = false;
-      } else {
-        updatedUser.pendingEvening = false;
-      }
+      updatedUser[`pending${timeOfDay}`] = false;
       await updatedUser.save();
     }
-  }, 6 * 60 * 60 * 1000); // 6 hours
+  }, 6 * 60 * 60 * 1000);
 }
 
-// Command Handlers
-bot.onText(/\/start/, async (msg) => {
-  const chatId = msg.chat.id;
-  let user = await User.findOne({ chatId });
-
-  if (!user) {
-    user = new User({ chatId });
-    await user.save();
-    await scheduleUserJobs(chatId);
-  }
-
-  const options = {
-    reply_markup: {
-      keyboard: [
-        [{ text: "⏰ Set Morning Time" }, { text: "🌙 Set Evening Time" }],
-        [{ text: "📊 My Stats" }, { text: "❌ Unsubscribe" }]
-      ],
-      resize_keyboard: true
-    }
-  };
-
-  await bot.sendMessage(chatId, `Welcome back! Here are your options:`, options);
+// Commands
+bot.command('start', async (ctx) => {
+  await scheduleUserJobs(ctx.chat.id);
+  const keyboard = Markup.keyboard([
+    ['⏰ Set Morning Time', '🌙 Set Evening Time'],
+    ['📊 My Stats', '❌ Unsubscribe']
+  ]).resize();
+  
+  return ctx.reply('Welcome! Manage your routines:', keyboard);
 });
 
-bot.onText(/Set (Morning|Evening) Time/, async (msg, match) => {
-  const chatId = msg.chat.id;
-  const timeOfDay = match[1].toLowerCase();
-  await bot.sendMessage(chatId, `Please enter your ${timeOfDay} time in 24-hour format (HH:MM), Cambodia timezone.\nExample: ${timeOfDay === 'morning' ? '07:30' : '20:00'}`);
+bot.hears(/Set (Morning|Evening) Time/, async (ctx) => {
+  const timeOfDay = ctx.match[1].toLowerCase();
+  return ctx.reply(
+    `Enter ${timeOfDay} time in 24h format (HH:MM)\nExample: ${timeOfDay === 'morning' ? '07:30' : '20:00'}`
+  );
 });
 
-bot.on('message', async (msg) => {
-  if (!msg.text) return;
+bot.hears(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/, async (ctx) => {
+  const time = ctx.message.text;
+  const isMorning = parseInt(time.split(':')[0]) < 12;
+  const field = isMorning ? 'morningTime' : 'eveningTime';
   
-  const chatId = msg.chat.id;
-  const text = msg.text;
+  ctx.user[field] = time;
+  await ctx.user.save();
+  await scheduleUserJobs(ctx.chat.id);
   
-  if (/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(text)) {
-    const user = await User.findOne({ chatId });
-    if (!user) return;
-    
-    const isMorning = text.split(':')[0] < 12;
-    
-    if (isMorning) {
-      user.morningTime = text;
-    } else {
-      user.eveningTime = text;
-    }
-    
-    await user.save();
-    await scheduleUserJobs(chatId);
-    await bot.sendMessage(chatId, `${isMorning ? 'Morning' : 'Evening'} time set to ${text}!`);
-  }
+  return ctx.reply(`${isMorning ? 'Morning' : 'Evening'} time set to ${time}!`);
 });
 
-// Callback Handlers
-bot.on('callback_query', async (callbackQuery) => {
-  const chatId = callbackQuery.message.chat.id;
-  const data = callbackQuery.data;
-  const user = await User.findOne({ chatId });
-  
-  if (!user) return;
-  
-  if (data.startsWith('ack_')) {
-    const timeOfDay = data.split('_')[1];
-    
-    if (timeOfDay === 'morning') {
-      user.pendingMorning = false;
-    } else {
-      user.pendingEvening = false;
-    }
-    
-    user.streak += 1;
-    user.lastActive = new Date();
-    await user.save();
-    
-    await bot.answerCallbackQuery(callbackQuery.id, { text: `Great job! ${user.streak} day streak!` });
-    await bot.editMessageReplyMarkup(
-      { inline_keyboard: [] },
-      { chat_id: chatId, message_id: callbackQuery.message.message_id }
-    );
-  } else if (data.startsWith('skip_')) {
-    const timeOfDay = data.split('_')[1];
-    
-    if (timeOfDay === 'morning') {
-      user.pendingMorning = false;
-    } else {
-      user.pendingEvening = false;
-    }
-    
-    await user.save();
-    
-    await bot.answerCallbackQuery(callbackQuery.id, { text: "Okay, skipped for today." });
-    await bot.editMessageReplyMarkup(
-      { inline_keyboard: [] },
-      { chat_id: chatId, message_id: callbackQuery.message.message_id }
-    );
-  }
-});
-
-// Stats Handler
-bot.onText(/My Stats/, async (msg) => {
-  const chatId = msg.chat.id;
-  const user = await User.findOne({ chatId });
-  
-  if (!user) return;
-  
-  const statsMessage = `
+bot.hears('📊 My Stats', async (ctx) => {
+  const stats = `
 📊 Your Stats:
-- Current Streak: ${user.streak} days
-- Morning Time: ${user.morningTime}
-- Evening Time: ${user.eveningTime}
-- Last Active: ${user.lastActive ? user.lastActive.toLocaleString() : 'Never'}
+- Streak: ${ctx.user.streak} days
+- Morning: ${ctx.user.morningTime}
+- Evening: ${ctx.user.eveningTime}
+- Last Active: ${ctx.user.lastActive.toLocaleString()}
   `;
-  
-  await bot.sendMessage(chatId, statsMessage);
+  return ctx.reply(stats);
 });
 
-// Unsubscribe Handler
-bot.onText(/Unsubscribe/, async (msg) => {
-  const chatId = msg.chat.id;
-  const user = await User.findOne({ chatId });
+bot.hears('❌ Unsubscribe', async (ctx) => {
+  [ctx.user.morningJobName, ctx.user.eveningJobName].forEach(jobName => {
+    if (activeJobs[jobName]) activeJobs[jobName].cancel();
+  });
   
-  if (!user) return;
-  
-  if (user.morningJobName && activeJobs[user.morningJobName]) {
-    activeJobs[user.morningJobName].cancel();
-    delete activeJobs[user.morningJobName];
-  }
-  if (user.eveningJobName && activeJobs[user.eveningJobName]) {
-    activeJobs[user.eveningJobName].cancel();
-    delete activeJobs[user.eveningJobName];
-  }
-  
-  await User.deleteOne({ chatId });
-  await bot.sendMessage(chatId, "You've been unsubscribed from all messages. Use /start to subscribe again.");
+  await User.deleteOne({ _id: ctx.user._id });
+  return ctx.reply('Unsubscribed! Use /start to resubscribe.');
 });
 
-// Webhook Endpoint
-app.post('/webhook', (req, res) => {
-  bot.processUpdate(req.body);
-  res.sendStatus(200);
+// Callbacks
+bot.action(/ack_(morning|evening)/, async (ctx) => {
+  const timeOfDay = ctx.match[1];
+  ctx.user[`pending${timeOfDay}`] = false;
+  ctx.user.streak += 1;
+  await ctx.user.save();
+  
+  await ctx.answerCbQuery(`Great job! ${ctx.user.streak} day streak!`);
+  return ctx.deleteMessage();
 });
 
-// Start Server
-const PORT = process.env.PORT || 3005;
+bot.action(/skip_(morning|evening)/, async (ctx) => {
+  const timeOfDay = ctx.match[1];
+  ctx.user[`pending${timeOfDay}`] = false;
+  await ctx.user.save();
+  
+  await ctx.answerCbQuery('Okay, skipped for today.');
+  return ctx.deleteMessage();
+});
+
+// Error handling
+bot.catch((err) => console.error('Bot error:', err));
+
+// Webhook setup
+app.use(express.json());
+app.post(`/webhook`, bot.webhookCallback());
+app.get('/', (req, res) => res.send('Bot is running'));
+
+// Start server
+const PORT = process.env.PORT || 3002;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  bot.getMe().then((me) => console.log(`Bot ${me.username} is running...`));
+  bot.launch({ webhook: { domain: process.env.WEBHOOK_URL } })
+    .then(() => console.log('Bot started via webhook'));
 });
-
 
 
 
