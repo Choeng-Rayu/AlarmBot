@@ -563,7 +563,7 @@ const PORT = 3007; // Use Render's PORT or fallback to 3000
 app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
   await setWebhook();
-  bot.launch({ webhook: { domain: process.env.WEBHOOK_URL, path: '/webhook' } })
+  bot.launch({ webhook: { domain: 'https://alarmbot-mbkv.onrender.com', path: '/webhook' } })
     .then(() => console.log('Bot started via webhook'))
     .catch((err) => console.error('Bot launch error:', err));
 });
