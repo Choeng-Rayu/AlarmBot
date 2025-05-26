@@ -253,9 +253,8 @@ app.post('/webhook', bot.webhookCallback('/webhook'));
 app.get('/', (req, res) => res.send('Bot is running'));
 
 // Set webhook explicitly
-const webhookURL = 'https://alarmbot-mbkv.onrender.com';
 async function setWebhook() {
-  const webhookUrl = `${webhookURL}/webhook`;
+  const webhookUrl = `${process.env.WEBHOOK_URL}/webhook`;
   try {
     await bot.telegram.setWebhook(webhookUrl);
     console.log(`Webhook set to ${webhookUrl}`);
