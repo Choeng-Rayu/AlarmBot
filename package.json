@@ -1,4 +1,11 @@
 {
+  "name": "mongdekbot-telegram",
+  "version": "1.0.0",
+  "main": "bot.js",
+  "description": "",
+  "scripts": {
+    "start": "node bot.js"
+  },
   "dependencies": {
     "axios": "^1.9.0",
     "dotenv": "^16.5.0",
@@ -15,12 +22,6 @@
     "pdfkit": "^0.17.1",
     "telegraf": "^4.16.3"
   },
-  "name": "mongdekbot-telegram",
-  "version": "1.0.0",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Choeng-Rayu/MongDekBot-Telegram.git"
@@ -31,6 +32,5 @@
   "bugs": {
     "url": "https://github.com/Choeng-Rayu/MongDekBot-Telegram/issues"
   },
-  "homepage": "https://github.com/Choeng-Rayu/MongDekBot-Telegram#readme",
-  "description": ""
+  "homepage": "https://github.com/Choeng-Rayu/MongDekBot-Telegram#readme"
 }
