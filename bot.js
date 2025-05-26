@@ -645,7 +645,7 @@ app.post('/webhook', bot.webhookCallback('/webhook'));
 app.get('/', (req, res) => res.send('Bot is running'));
 
 // Set webhook explicitly
-const webhookUrl = 'https://api.render.com/deploy/srv-d0q9o93uibrs73ee3t3g?key=Ria7pRCkeUw'
+const webhookUrl = 'https://alarmbot-d1r4.onrender.com'
 async function setWebhook() {
   const webhookUrl = `${webhookUrl}/webhook`;
   try {
@@ -663,7 +663,7 @@ const PORT = 3007; // Use Render's PORT or fallback to 3000
 app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
   await setWebhook();
-  bot.launch({ webhook: { domain: 'https://api.render.com/deploy/srv-d0q9o93uibrs73ee3t3g?key=Ria7pRCkeUw', path: '/webhook' } })
+  bot.launch({ webhook: { domain: 'https://alarmbot-d1r4.onrender.com', path: '/webhook' } })
     .then(() => console.log('Bot started via webhook'))
     .catch((err) => console.error('Bot launch error:', err));
 });
