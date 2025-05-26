@@ -1435,7 +1435,7 @@
 //   );
 // });
 
-// // Handle /addalarm command
+// Handle /addalarm command
 // bot.onText(/\/addalarm (\d{2}:\d{2})/, async (msg, match) => {
 //   const chatId = msg.chat.id;
 //   const time = match[1];
@@ -1824,6 +1824,102 @@ bot.onText(/\/addalarm (\d{2}:\d{2})/, async (msg, match) => {
   );
 });
 
+
 // ... rest of the handlers remain the same as in original code ...
+
+// Handle callback queries
+bot.on('callback_query', async (callbackQuery) => {
+  const chatId = callbackQuery.message.chat.id;
+  const data = callbackQuery.data;
+  const user = await User.findOne({ chatId });
+  
+  if (!user) return;
+  
+  if (data.startsWith('ack_')) {
+    const alarmIndex = parseInt(data.split('_')[1]);
+    if (alarmIndex < user.alarms.length) {
+      user.alarms[alarmIndex].pending = false;
+      user.streak += 1;
+      user.lastActive = new Date();
+      await user.save();
+      
+      await bot.answerCallbackQuery(callbackQuery.id, { 
+        text: `Great job! ${user.streak} day streak!` 
+      });
+      await bot.editMessageReplyMarkup(
+        { inline_keyboard: [] },
+        { chat_id: chatId, message_id: callbackQuery.message.message_id }
+      );
+    }
+  } else if (data.startsWith('skip_')) {
+    const alarmIndex = parseInt(data.split('_')[1]);
+    if (alarmIndex < user.alarms.length) {
+      user.alarms[alarmIndex].pending = false;
+      await user.save();
+      
+      await bot.answerCallbackQuery(callbackQuery.id, { 
+        text: "Okay, skipped for today." 
+      });
+      await bot.editMessageReplyMarkup(
+        { inline_keyboard: [] },
+        { chat_id: chatId, message_id: callbackQuery.message.message_id }
+      );
+    }
+  }
+});
+
+// Handle "List Alarms" command
+bot.onText(/List Alarms/, async (msg) => {
+  const chatId = msg.chat.id;
+  const user = await User.findOne({ chatId });
+  
+  if (!user || user.alarms.length === 0) {
+    await bot.sendMessage(chatId, "You have no alarms set.");
+    return;
+  }
+
+  const alarmList = user.alarms.map((alarm, index) => 
+    `${index + 1}. ${alarm.time}`
+  ).join('\n');
+  await bot.sendMessage(chatId, `Your alarms:\n${alarmList}`);
+});
+
+// Handle "My Stats" command
+bot.onText(/My Stats/, async (msg) => {
+  const chatId = msg.chat.id;
+  const user = await User.findOne({ chatId });
+  
+  if (!user) return;
+  
+  const statsMessage = `
+📊 Your Stats:
+- Current Streak: ${user.streak} days
+- Alarms Set: ${user.alarms.length}/10
+- Last Active: ${user.lastActive ? user.lastActive.toLocaleString() : 'Never'}
+  `;
+  
+  await bot.sendMessage(chatId, statsMessage);
+});
+
+// Handle "Unsubscribe" command
+bot.onText(/Unsubscribe/, async (msg) => {
+  const chatId = msg.chat.id;
+  const user = await User.findOne({ chatId });
+  
+  if (!user) return;
+  
+  user.alarms.forEach(alarm => {
+    if (alarm.jobName && activeJobs[alarm.jobName]) {
+      activeJobs[alarm.jobName].cancel();
+      delete activeJobs[alarm.jobName];
+    }
+  });
+  
+  await User.deleteOne({ chatId });
+  await bot.sendMessage(chatId, 
+    "You've been unsubscribed. Use /start to subscribe again."
+  );
+});
+
 
 console.log('Bot is running...');
