@@ -27,7 +27,7 @@ const userSchema = new mongoose.Schema({
 const User = mongoose.model('User', userSchema);
 
 // Initialize bot and server
-const token = '7645640741:AAEQzRGjycPrhJCU52qNY8WA74BW2y5Hocw';
+const token = '';
 const bot = new TelegramBot(token);
 const app = express();
 app.use(bodyParser.json());
@@ -174,7 +174,7 @@ async function scheduleAllUsersAlarms() {
 }
 
 // Start server and set webhook
-const PORT = 443;
+const PORT = 3000;
 app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
   const webhookUrl = 'https://alarmbot-mbkv.onrender.com';
