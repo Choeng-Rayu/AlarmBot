@@ -876,7 +876,7 @@ app.get('/', (req, res) => res.send('Bot is running'));
 
 // Set webhook explicitly
 const PORT = process.env.PORT || 3000;
-const WEBHOOK_URL = process.env.WEBHOOK_URL; // Set this in Render.com as your public URL
+const WEBHOOK_URL = process.env.WEBHOOK_URL || 'https://alarmbot-d1r4.onrender.com'; // Set this in Render.com as your public URL
 
 async function setWebhook() {
   try {
